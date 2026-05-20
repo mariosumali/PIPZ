@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="public/pipz-logo.png" alt="PIPZ logo" width="280" />
+</p>
+
 # PIPZ
 
 An endless high-score puzzle game built around dice. Place single and double pieces on a 6×6 grid, merge matching numbers, chain reactions for bigger scores, and chase sixes until the board fills up.
