@@ -9,13 +9,16 @@ import GameOver from './GameOver';
 import ScoreDisplay from './ScoreDisplay';
 
 export default function Game() {
-  const { currentPiece, resetGame, rotatePiece } = useGameStore();
+  const { currentPiece, phase, resetGame, rotatePiece } = useGameStore();
 
+  // Initialize the game on first load only. The store intentionally clears
+  // `currentPiece` while a merge animation plays (phase === 'merging'), so we
+  // must NOT treat a null piece during a merge as "needs a new game".
   useEffect(() => {
-    if (!currentPiece) {
+    if (!currentPiece && phase === 'playing') {
       resetGame();
     }
-  }, [currentPiece, resetGame]);
+  }, [currentPiece, phase, resetGame]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
