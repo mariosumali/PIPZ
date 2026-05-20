@@ -1,0 +1,42 @@
+@import "tailwindcss";
+
+@theme inline {
+  --color-background: #f0ebe3;
+  --color-foreground: #2d2926;
+  --color-paper: #f7f3ed;
+  --color-paper-dark: #e8e2d8;
+  --color-ink: #3d3832;
+  --color-ink-light: #6b6259;
+  --color-border: #c4b8a8;
+  --color-border-dark: #3d3832;
+  --font-sans: var(--font-inter);
+}
+
+* {
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  background: var(--color-background);
+  color: var(--color-foreground);
+  touch-action: manipulation;
+}
+
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(139, 115, 85, 0); }
+  50% { box-shadow: 0 0 12px 4px rgba(139, 115, 85, 0.3); }
+}
+
+.merge-glow {
+  animation: pulse-glow 0.5s ease-in-out;
+}
+
+@keyframes explode-particles {
+  0% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.4); opacity: 0.8; }
+  100% { transform: scale(0); opacity: 0; }
+}
+
+.explode-effect {
+  animation: explode-particles 0.5s ease-out forwards;
+}
