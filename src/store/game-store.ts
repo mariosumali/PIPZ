@@ -1,5 +1,15 @@
 import { create } from 'zustand';
-import { Board, DominoPiece, GamePhase, Piece, Position, ScoreEvent } from '@/types/game';
+import {
+  Board,
+  DominoPiece,
+  GamePhase,
+  MergeAnimationState,
+  MergeGroup,
+  MergeGroupAnimation,
+  Piece,
+  Position,
+  ScoreEvent,
+} from '@/types/game';
 import {
   createEmptyBoard,
   findMergeGroups,
@@ -11,6 +21,11 @@ import {
 import { generatePiece } from '@/lib/piece-generator';
 import { playPlaceSound, playMergeSound, playExplosionSound, playRotateSound } from '@/lib/sounds';
 
+const GLOW_DURATION = 250;
+const COLLAPSE_DURATION = 350;
+const RESOLVE_DURATION = 300;
+const CHAIN_PAUSE = 200;
+
 interface GameState {
   board: Board;
   currentPiece: Piece | null;
@@ -19,13 +34,21 @@ interface GameState {
   turnNumber: number;
   phase: GamePhase;
   scoreEvents: ScoreEvent[];
-  mergingCells: Position[];
-  explodingCells: Position[];
+  mergeAnimation: MergeAnimationState | null;
+  resolvingCells: Position[];
 
   placePiece: (position: Position) => void;
   rotatePiece: () => void;
   resetGame: () => void;
   dismissScoreEvent: (id: string) => void;
+}
+
+let mergeTimers: ReturnType<typeof setTimeout>[] = [];
+let pendingScore = 0;
+
+function clearMergeTimers() {
+  mergeTimers.forEach(clearTimeout);
+  mergeTimers = [];
 }
 
 function loadBestScore(): number {
@@ -46,6 +69,154 @@ function checkGameOver(board: Board, piece: Piece): boolean {
   return !canPlaceDomino(board);
 }
 
+function buildMergeAnimations(
+  mergeGroups: MergeGroup[],
+  lastPlaced: Position
+): MergeGroupAnimation[] {
+  return mergeGroups.map(group => {
+    const target =
+      group.cells.find(c => c.row === lastPlaced.row && c.col === lastPlaced.col) ||
+      group.cells[group.cells.length - 1];
+    return {
+      cells: group.cells,
+      target,
+      value: group.value,
+      isExplosion: group.value === 6,
+    };
+  });
+}
+
+type SetFn = (partial: Partial<GameState> | ((state: GameState) => Partial<GameState>)) => void;
+type GetFn = () => GameState;
+
+function startMergeSequence(set: SetFn, get: GetFn, chainLink: number, lastPlaced: Position) {
+  mergeTimers.push(
+    setTimeout(() => {
+      const anim = get().mergeAnimation;
+      if (!anim) return;
+      set({ mergeAnimation: { ...anim, phase: 'collapse' } });
+    }, GLOW_DURATION)
+  );
+
+  mergeTimers.push(
+    setTimeout(() => {
+      const { board, mergeAnimation: anim } = get();
+      if (!anim) return;
+
+      let newBoard = board.map(r => [...r]);
+      const scoreEvents: ScoreEvent[] = [];
+      let hasExplosion = false;
+      const resolveTargets: Position[] = [];
+
+      for (const group of anim.groups) {
+        const mergeGroup: MergeGroup = {
+          cells: group.cells,
+          value: group.value,
+          targetCell: group.target,
+        };
+
+        const points = calculateMergeScore(mergeGroup, chainLink);
+        pendingScore += points;
+
+        if (group.isExplosion) {
+          hasExplosion = true;
+        } else {
+          resolveTargets.push(group.target);
+        }
+
+        scoreEvents.push({
+          id: `${Date.now()}-${chainLink}-${Math.random()}`,
+          points,
+          position: group.target,
+          chainLink,
+          timestamp: Date.now(),
+        });
+
+        newBoard = resolveMerge(newBoard, mergeGroup, lastPlaced);
+      }
+
+      if (hasExplosion) {
+        playExplosionSound();
+      } else {
+        playMergeSound(chainLink);
+      }
+
+      let newBestScore = get().bestScore;
+      if (pendingScore > newBestScore) {
+        newBestScore = pendingScore;
+        saveBestScore(newBestScore);
+      }
+
+      set({
+        board: newBoard,
+        score: pendingScore,
+        bestScore: newBestScore,
+        mergeAnimation: { ...anim, phase: 'resolve' },
+        resolvingCells: resolveTargets,
+        scoreEvents: [...get().scoreEvents, ...scoreEvents],
+      });
+    }, GLOW_DURATION + COLLAPSE_DURATION)
+  );
+
+  mergeTimers.push(
+    setTimeout(() => {
+      const { board } = get();
+      set({ resolvingCells: [] });
+
+      const nextMergeGroups = findMergeGroups(board);
+
+      if (nextMergeGroups.length > 0) {
+        const prevAnim = get().mergeAnimation;
+        const prevTarget = prevAnim?.groups[0]?.target || lastPlaced;
+        const nextChainLink = chainLink + 1;
+        const nextAnimations = buildMergeAnimations(nextMergeGroups, prevTarget);
+
+        set({
+          mergeAnimation: {
+            phase: 'glow',
+            groups: nextAnimations,
+            chainLink: nextChainLink,
+            lastPlaced: prevTarget,
+          },
+        });
+
+        mergeTimers.push(
+          setTimeout(() => {
+            startMergeSequence(set, get, nextChainLink, prevTarget);
+          }, CHAIN_PAUSE)
+        );
+      } else {
+        finalizeTurn(set, get);
+      }
+    }, GLOW_DURATION + COLLAPSE_DURATION + RESOLVE_DURATION)
+  );
+}
+
+function finalizeTurn(set: SetFn, get: GetFn) {
+  clearMergeTimers();
+  const { board, turnNumber } = get();
+  const newTurn = turnNumber + 1;
+  const nextPiece = generatePiece(newTurn);
+
+  let newBestScore = get().bestScore;
+  if (pendingScore > newBestScore) {
+    newBestScore = pendingScore;
+    saveBestScore(newBestScore);
+  }
+
+  const isGameOver = checkGameOver(board, nextPiece);
+
+  set({
+    score: pendingScore,
+    bestScore: newBestScore,
+    turnNumber: newTurn,
+    currentPiece: nextPiece,
+    phase: isGameOver ? 'gameover' : 'playing',
+    mergeAnimation: null,
+    resolvingCells: [],
+  });
+}
+
 export const useGameStore = create<GameState>((set, get) => ({
   board: createEmptyBoard(),
   currentPiece: null,
@@ -54,119 +225,78 @@ export const useGameStore = create<GameState>((set, get) => ({
   turnNumber: 1,
   phase: 'playing',
   scoreEvents: [],
-  mergingCells: [],
-  explodingCells: [],
+  mergeAnimation: null,
+  resolvingCells: [],
 
   placePiece: (position: Position) => {
     const { board, currentPiece, score, turnNumber } = get();
     if (!currentPiece || get().phase !== 'playing') return;
 
-    let newBoard = board.map(row => [...row]);
-    const placedPositions: Position[] = [];
+    const newBoard = board.map(row => [...row]);
 
     if (currentPiece.type === 'single') {
       if (newBoard[position.row][position.col] !== null) return;
       newBoard[position.row][position.col] = currentPiece.value;
-      placedPositions.push(position);
     } else {
       const domino = currentPiece as DominoPiece;
-      const secondPos: Position = domino.orientation === 'horizontal'
-        ? { row: position.row, col: position.col + 1 }
-        : { row: position.row + 1, col: position.col };
+      const secondPos: Position =
+        domino.orientation === 'horizontal'
+          ? { row: position.row, col: position.col + 1 }
+          : { row: position.row + 1, col: position.col };
 
       if (
-        secondPos.row >= 6 || secondPos.col >= 6 ||
+        secondPos.row >= 6 ||
+        secondPos.col >= 6 ||
         newBoard[position.row][position.col] !== null ||
         newBoard[secondPos.row][secondPos.col] !== null
-      ) return;
+      )
+        return;
 
       newBoard[position.row][position.col] = domino.values[0];
       newBoard[secondPos.row][secondPos.col] = domino.values[1];
-      placedPositions.push(position, secondPos);
     }
-
-    let totalScore = score;
-    let chainLink = 0;
-    const allScoreEvents: ScoreEvent[] = [];
-    let allMergingCells: Position[] = [];
-    let allExplodingCells: Position[] = [];
 
     playPlaceSound();
 
-    let mergeGroups = findMergeGroups(newBoard);
-    let lastTarget = position;
-    let hasExplosion = false;
+    const mergeGroups = findMergeGroups(newBoard);
 
-    while (mergeGroups.length > 0) {
-      chainLink++;
+    if (mergeGroups.length > 0) {
+      pendingScore = score;
+      const animations = buildMergeAnimations(mergeGroups, position);
 
-      for (const group of mergeGroups) {
-        const points = calculateMergeScore(group, chainLink);
-        totalScore += points;
+      set({
+        board: newBoard,
+        currentPiece: null,
+        phase: 'merging',
+        mergeAnimation: {
+          phase: 'glow',
+          groups: animations,
+          chainLink: 1,
+          lastPlaced: position,
+        },
+      });
 
-        const isExplosion = group.value === 6;
-        if (isExplosion) {
-          allExplodingCells = [...allExplodingCells, ...group.cells];
-          hasExplosion = true;
-        } else {
-          allMergingCells = [...allMergingCells, ...group.cells];
-        }
+      startMergeSequence(set, get, 1, position);
+    } else {
+      const newTurn = turnNumber + 1;
+      const nextPiece = generatePiece(newTurn);
 
-        allScoreEvents.push({
-          id: `${Date.now()}-${chainLink}-${Math.random()}`,
-          points,
-          position: group.cells[0],
-          chainLink,
-          timestamp: Date.now(),
-        });
-
-        const target = group.cells.find(
-          c => c.row === lastTarget.row && c.col === lastTarget.col
-        ) || group.cells[group.cells.length - 1];
-        
-        newBoard = resolveMerge(newBoard, group, lastTarget);
-        lastTarget = target;
+      let newBestScore = get().bestScore;
+      if (score > newBestScore) {
+        newBestScore = score;
+        saveBestScore(newBestScore);
       }
 
-      mergeGroups = findMergeGroups(newBoard);
+      const isGameOver = checkGameOver(newBoard, nextPiece);
+
+      set({
+        board: newBoard,
+        turnNumber: newTurn,
+        currentPiece: nextPiece,
+        phase: isGameOver ? 'gameover' : 'playing',
+        bestScore: newBestScore,
+      });
     }
-
-    if (chainLink > 0) {
-      setTimeout(() => {
-        if (hasExplosion) {
-          playExplosionSound();
-        } else {
-          playMergeSound(chainLink);
-        }
-      }, 100);
-    }
-
-    const newTurn = turnNumber + 1;
-    const nextPiece = generatePiece(newTurn);
-
-    let newBestScore = get().bestScore;
-    if (totalScore > newBestScore) {
-      newBestScore = totalScore;
-      saveBestScore(newBestScore);
-    }
-
-    const isGameOver = checkGameOver(newBoard, nextPiece);
-
-    set({
-      board: newBoard,
-      score: totalScore,
-      bestScore: newBestScore,
-      turnNumber: newTurn,
-      currentPiece: nextPiece,
-      phase: isGameOver ? 'gameover' : 'playing',
-      scoreEvents: [...get().scoreEvents, ...allScoreEvents],
-      mergingCells: allMergingCells,
-      explodingCells: allExplodingCells,
-    });
-
-    setTimeout(() => {
-      set({ mergingCells: [], explodingCells: [] });
-    }, 600);
   },
 
   rotatePiece: () => {
@@ -187,6 +317,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   },
 
   resetGame: () => {
+    clearMergeTimers();
     const firstPiece = generatePiece(1);
     set({
       board: createEmptyBoard(),
@@ -195,8 +326,8 @@ export const useGameStore = create<GameState>((set, get) => ({
       turnNumber: 1,
       phase: 'playing',
       scoreEvents: [],
-      mergingCells: [],
-      explodingCells: [],
+      mergeAnimation: null,
+      resolvingCells: [],
       bestScore: loadBestScore(),
     });
   },
