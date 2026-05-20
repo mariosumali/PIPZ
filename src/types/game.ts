@@ -38,4 +38,18 @@ export interface ScoreEvent {
   timestamp: number;
 }
 
+export interface MergeGroupAnimation {
+  cells: Position[];
+  target: Position;
+  value: DieValue;
+  isExplosion: boolean;
+}
+
+export interface MergeAnimationState {
+  phase: 'glow' | 'collapse' | 'resolve';
+  groups: MergeGroupAnimation[];
+  chainLink: number;
+  lastPlaced: Position;
+}
+
 export type GamePhase = 'playing' | 'merging' | 'gameover';
