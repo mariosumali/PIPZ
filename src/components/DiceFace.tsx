@@ -49,7 +49,7 @@ export default function DiceFace({ value, size = 'md', className = '' }: DiceFac
 
   return (
     <div className={`relative w-full h-full rounded-md bg-[#faf8f5] border-2 ${border} ${className}`}>
-      <span className="absolute top-0.5 left-1 text-[7px] font-medium text-[#6b6259]/60 leading-none">{value}</span>
+      {/* <span className="absolute top-0.5 left-1 text-[7px] font-medium text-[#6b6259]/60 leading-none">{value}</span> */}
       {positions.map((pos, i) => (
         <span
           key={i}
