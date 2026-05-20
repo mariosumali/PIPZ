@@ -1,6 +1,5 @@
 'use client';
 
-import { motion } from 'framer-motion';
 import { useGameStore } from '@/store/game-store';
 import DiceFace from './DiceFace';
 import { useRef, useCallback } from 'react';
@@ -18,54 +17,58 @@ export default function PieceTray() {
     rotatePiece();
   }, [rotatePiece]);
 
-  if (!currentPiece || phase === 'gameover') return null;
+  if (phase === 'gameover') return null;
 
-  const isDomino = currentPiece.type === 'domino';
-  const isHorizontal = isDomino && currentPiece.orientation === 'horizontal';
+  const isDomino = currentPiece?.type === 'domino';
+  const isHorizontal =
+    currentPiece?.type === 'domino' && currentPiece.orientation === 'horizontal';
 
   return (
     <div className="flex flex-col items-center gap-3 pt-4 pb-2">
       <div className="flex items-center gap-3">
-        {/* Fixed-size container prevents layout shift on rotation */}
+        {/* Fixed-size container reserves space so the page doesn't reflow when
+            the piece is briefly absent during a merge animation (or rotation). */}
         <div className="flex items-center justify-center w-[120px] h-[120px] sm:w-[140px] sm:h-[140px]">
-          <div
-            ref={pieceRef}
-            draggable
-            onClick={handleClick}
-            onDragStart={(e) => {
-              didDrag.current = true;
-              e.dataTransfer.setData('text/plain', 'piece');
-              e.dataTransfer.effectAllowed = 'move';
-              if (pieceRef.current) {
-                const rect = pieceRef.current.getBoundingClientRect();
-                e.dataTransfer.setDragImage(pieceRef.current, rect.width / 2, rect.height / 2);
-              }
-            }}
-            className={`
-              cursor-pointer
-              grid gap-1 p-1 rounded-lg bg-[#faf8f5] border-2 border-[#3d3832] shadow-sm
-              hover:scale-105 active:scale-95 transition-transform
-              ${isDomino
-                ? isHorizontal ? 'grid-cols-2 grid-rows-1' : 'grid-cols-1 grid-rows-2'
-                : 'grid-cols-1 grid-rows-1'
-              }
-            `}
-          >
-            {currentPiece.type === 'single' ? (
-              <div className="w-12 h-12 sm:w-14 sm:h-14">
-                <DiceFace value={currentPiece.value} size="lg" />
-              </div>
-            ) : (
-              <>
+          {currentPiece && (
+            <div
+              ref={pieceRef}
+              draggable
+              onClick={handleClick}
+              onDragStart={(e) => {
+                didDrag.current = true;
+                e.dataTransfer.setData('text/plain', 'piece');
+                e.dataTransfer.effectAllowed = 'move';
+                if (pieceRef.current) {
+                  const rect = pieceRef.current.getBoundingClientRect();
+                  e.dataTransfer.setDragImage(pieceRef.current, rect.width / 2, rect.height / 2);
+                }
+              }}
+              className={`
+                cursor-pointer
+                grid gap-1 p-1 rounded-lg bg-[#faf8f5] border-2 border-[#3d3832] shadow-sm
+                hover:scale-105 active:scale-95 transition-transform
+                ${isDomino
+                  ? isHorizontal ? 'grid-cols-2 grid-rows-1' : 'grid-cols-1 grid-rows-2'
+                  : 'grid-cols-1 grid-rows-1'
+                }
+              `}
+            >
+              {currentPiece.type === 'single' ? (
                 <div className="w-12 h-12 sm:w-14 sm:h-14">
-                  <DiceFace value={currentPiece.values[0]} size="lg" />
+                  <DiceFace value={currentPiece.value} size="lg" />
                 </div>
-                <div className="w-12 h-12 sm:w-14 sm:h-14">
-                  <DiceFace value={currentPiece.values[1]} size="lg" />
-                </div>
-              </>
-            )}
-          </div>
+              ) : (
+                <>
+                  <div className="w-12 h-12 sm:w-14 sm:h-14">
+                    <DiceFace value={currentPiece.values[0]} size="lg" />
+                  </div>
+                  <div className="w-12 h-12 sm:w-14 sm:h-14">
+                    <DiceFace value={currentPiece.values[1]} size="lg" />
+                  </div>
+                </>
+              )}
+            </div>
+          )}
         </div>
 
         {/* {isDomino && (
