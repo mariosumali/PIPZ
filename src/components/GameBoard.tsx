@@ -43,7 +43,11 @@ export default function GameBoard() {
       const rect = boardRef.current.getBoundingClientRect();
       const padding = parseFloat(style.paddingLeft) || 12;
       const gap = parseFloat(style.gap) || 6;
-      const cellWidth = (rect.width - 2 * padding - 5 * gap) / 6;
+      // rect.width is border-box, so subtract the border too — otherwise the
+      // computed cell pitch is slightly too large and collapsing tiles drift
+      // past the merge target.
+      const border = parseFloat(style.borderLeftWidth) || 0;
+      const cellWidth = (rect.width - 2 * border - 2 * padding - 5 * gap) / 6;
       setCellPitch(cellWidth + gap);
     };
     compute();
