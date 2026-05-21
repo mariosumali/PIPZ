@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useGameStore } from '@/store/game-store';
 import DiceFace from './DiceFace';
 import { DieValue, Position } from '@/types/game';
+import { getBoardPositionFromPoint } from '@/lib/board-position';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 const GLOW_COLORS: Record<number, string> = {
@@ -30,6 +31,7 @@ export default function GameBoard() {
     placePiece,
     mergeAnimation,
     resolvingCells,
+    dragPreviewPosition,
   } = useGameStore();
 
   const boardRef = useRef<HTMLDivElement>(null);
@@ -99,46 +101,32 @@ export default function GameBoard() {
     [isValidPlacement]
   );
 
-  const getCellFromTouch = useCallback(
-    (clientX: number, clientY: number): Position | null => {
-      if (!boardRef.current) return null;
-      const rect = boardRef.current.getBoundingClientRect();
-      const x = clientX - rect.left;
-      const y = clientY - rect.top;
-      const cellWidth = rect.width / 6;
-      const cellHeight = rect.height / 6;
-      const col = Math.floor(x / cellWidth);
-      const row = Math.floor(y / cellHeight);
-      if (row < 0 || row >= 6 || col < 0 || col >= 6) return null;
-      return { row, col };
-    },
-    []
-  );
-
   const handleDragOver = useCallback(
     (e: React.DragEvent) => {
       e.preventDefault();
       e.dataTransfer.dropEffect = 'move';
-      const pos = getCellFromTouch(e.clientX, e.clientY);
+      if (!boardRef.current) return;
+      const pos = getBoardPositionFromPoint(boardRef.current, e.clientX, e.clientY);
       if (pos && isValidPlacement(pos)) {
         setHoverPos(pos);
       } else {
         setHoverPos(null);
       }
     },
-    [getCellFromTouch, isValidPlacement]
+    [isValidPlacement]
   );
 
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
       e.preventDefault();
-      const pos = getCellFromTouch(e.clientX, e.clientY);
+      if (!boardRef.current) return;
+      const pos = getBoardPositionFromPoint(boardRef.current, e.clientX, e.clientY);
       if (pos && isValidPlacement(pos)) {
         placePiece(pos);
       }
       setHoverPos(null);
     },
-    [getCellFromTouch, isValidPlacement, placePiece]
+    [isValidPlacement, placePiece]
   );
 
   const handleDragLeave = useCallback(() => {
@@ -170,16 +158,21 @@ export default function GameBoard() {
     [resolvingCells]
   );
 
+  const previewPos =
+    dragPreviewPosition && isValidPlacement(dragPreviewPosition)
+      ? dragPreviewPosition
+      : hoverPos;
+
   const isGhostCell = (row: number, col: number): DieValue | null => {
-    if (!hoverPos || !currentPiece) return null;
+    if (!previewPos || !currentPiece) return null;
     if (currentPiece.type === 'single') {
-      if (row === hoverPos.row && col === hoverPos.col) return currentPiece.value;
+      if (row === previewPos.row && col === previewPos.col) return currentPiece.value;
     } else {
-      if (row === hoverPos.row && col === hoverPos.col) return currentPiece.values[0];
+      if (row === previewPos.row && col === previewPos.col) return currentPiece.values[0];
       const secondPos =
         currentPiece.orientation === 'horizontal'
-          ? { row: hoverPos.row, col: hoverPos.col + 1 }
-          : { row: hoverPos.row + 1, col: hoverPos.col };
+          ? { row: previewPos.row, col: previewPos.col + 1 }
+          : { row: previewPos.row + 1, col: previewPos.col };
       if (row === secondPos.row && col === secondPos.col) return currentPiece.values[1];
     }
     return null;
@@ -188,6 +181,7 @@ export default function GameBoard() {
   return (
     <div
       ref={boardRef}
+      data-game-board
       className="grid grid-cols-6 gap-1.5 p-3 bg-[#e8e2d8] rounded-2xl border-2 border-[#3d3832] aspect-square w-full max-w-[min(85vw,400px)] shadow-sm"
       style={{ perspective: 800 }}
       onDragOver={handleDragOver}

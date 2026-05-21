@@ -2,12 +2,20 @@
 
 import { useGameStore } from '@/store/game-store';
 import DiceFace from './DiceFace';
-import { useRef, useCallback } from 'react';
+import { getBoardPositionFromPoint } from '@/lib/board-position';
+import { useRef, useCallback, type PointerEvent } from 'react';
 
 export default function PieceTray() {
-  const { currentPiece, rotatePiece, phase } = useGameStore();
+  const { currentPiece, rotatePiece, phase, placePiece, setDragPreviewPosition } =
+    useGameStore();
   const pieceRef = useRef<HTMLDivElement>(null);
   const didDrag = useRef(false);
+  const pointerDrag = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    dragging: boolean;
+  } | null>(null);
 
   const handleClick = useCallback(() => {
     if (didDrag.current) {
@@ -16,6 +24,81 @@ export default function PieceTray() {
     }
     rotatePiece();
   }, [rotatePiece]);
+
+  const getTouchedBoardPosition = useCallback((clientX: number, clientY: number) => {
+    const boardElement = document.querySelector<HTMLElement>('[data-game-board]');
+    if (!boardElement) return null;
+    return getBoardPositionFromPoint(boardElement, clientX, clientY);
+  }, []);
+
+  const handlePointerDown = useCallback(
+    (e: PointerEvent<HTMLDivElement>) => {
+      if (e.pointerType === 'mouse' || phase !== 'playing' || !currentPiece) return;
+      pointerDrag.current = {
+        pointerId: e.pointerId,
+        startX: e.clientX,
+        startY: e.clientY,
+        dragging: false,
+      };
+      e.currentTarget.setPointerCapture(e.pointerId);
+    },
+    [currentPiece, phase]
+  );
+
+  const handlePointerMove = useCallback(
+    (e: PointerEvent<HTMLDivElement>) => {
+      const drag = pointerDrag.current;
+      if (!drag || drag.pointerId !== e.pointerId) return;
+
+      const distance = Math.hypot(e.clientX - drag.startX, e.clientY - drag.startY);
+      if (!drag.dragging && distance < 8) return;
+
+      drag.dragging = true;
+      didDrag.current = true;
+      e.preventDefault();
+      setDragPreviewPosition(getTouchedBoardPosition(e.clientX, e.clientY));
+    },
+    [getTouchedBoardPosition, setDragPreviewPosition]
+  );
+
+  const handlePointerUp = useCallback(
+    (e: PointerEvent<HTMLDivElement>) => {
+      const drag = pointerDrag.current;
+      if (!drag || drag.pointerId !== e.pointerId) return;
+
+      if (drag.dragging) {
+        e.preventDefault();
+        const pos = getTouchedBoardPosition(e.clientX, e.clientY);
+        if (pos) {
+          placePiece(pos);
+        }
+        setDragPreviewPosition(null);
+        window.setTimeout(() => {
+          didDrag.current = false;
+        }, 0);
+      }
+
+      pointerDrag.current = null;
+      if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      }
+    },
+    [getTouchedBoardPosition, placePiece, setDragPreviewPosition]
+  );
+
+  const handlePointerCancel = useCallback(
+    (e: PointerEvent<HTMLDivElement>) => {
+      const drag = pointerDrag.current;
+      if (!drag || drag.pointerId !== e.pointerId) return;
+      pointerDrag.current = null;
+      didDrag.current = false;
+      setDragPreviewPosition(null);
+      if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+        e.currentTarget.releasePointerCapture(e.pointerId);
+      }
+    },
+    [setDragPreviewPosition]
+  );
 
   if (phase === 'gameover') return null;
 
@@ -34,6 +117,10 @@ export default function PieceTray() {
               ref={pieceRef}
               draggable
               onClick={handleClick}
+              onPointerDown={handlePointerDown}
+              onPointerMove={handlePointerMove}
+              onPointerUp={handlePointerUp}
+              onPointerCancel={handlePointerCancel}
               onDragStart={(e) => {
                 didDrag.current = true;
                 e.dataTransfer.setData('text/plain', 'piece');
@@ -46,7 +133,7 @@ export default function PieceTray() {
               className={`
                 cursor-pointer
                 grid gap-1 p-1 rounded-lg bg-[#faf8f5] border-2 border-[#3d3832] shadow-sm
-                hover:scale-105 active:scale-95 transition-transform
+                touch-none hover:scale-105 active:scale-95 transition-transform
                 ${isDomino
                   ? isHorizontal ? 'grid-cols-2 grid-rows-1' : 'grid-cols-1 grid-rows-2'
                   : 'grid-cols-1 grid-rows-1'

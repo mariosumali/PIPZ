@@ -36,10 +36,12 @@ interface GameState {
   scoreEvents: ScoreEvent[];
   mergeAnimation: MergeAnimationState | null;
   resolvingCells: Position[];
+  dragPreviewPosition: Position | null;
 
   placePiece: (position: Position) => void;
   rotatePiece: () => void;
   resetGame: () => void;
+  setDragPreviewPosition: (position: Position | null) => void;
   dismissScoreEvent: (id: string) => void;
 }
 
@@ -214,6 +216,7 @@ function finalizeTurn(set: SetFn, get: GetFn) {
     phase: isGameOver ? 'gameover' : 'playing',
     mergeAnimation: null,
     resolvingCells: [],
+    dragPreviewPosition: null,
   });
 }
 
@@ -227,6 +230,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   scoreEvents: [],
   mergeAnimation: null,
   resolvingCells: [],
+  dragPreviewPosition: null,
 
   placePiece: (position: Position) => {
     const { board, currentPiece, score, turnNumber } = get();
@@ -268,6 +272,7 @@ export const useGameStore = create<GameState>((set, get) => ({
         board: newBoard,
         currentPiece: null,
         phase: 'merging',
+        dragPreviewPosition: null,
         mergeAnimation: {
           phase: 'glow',
           groups: animations,
@@ -295,6 +300,7 @@ export const useGameStore = create<GameState>((set, get) => ({
         currentPiece: nextPiece,
         phase: isGameOver ? 'gameover' : 'playing',
         bestScore: newBestScore,
+        dragPreviewPosition: null,
       });
     }
   },
@@ -328,8 +334,13 @@ export const useGameStore = create<GameState>((set, get) => ({
       scoreEvents: [],
       mergeAnimation: null,
       resolvingCells: [],
+      dragPreviewPosition: null,
       bestScore: loadBestScore(),
     });
+  },
+
+  setDragPreviewPosition: (position: Position | null) => {
+    set({ dragPreviewPosition: position });
   },
 
   dismissScoreEvent: (id: string) => {
