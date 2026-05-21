@@ -19,12 +19,16 @@ const siteOrigin =
 const siteUrl = siteOrigin.startsWith("http")
   ? siteOrigin
   : `https://${siteOrigin}`;
+const shareImage = "/pipz-share-preview.png";
 
 export const metadata: Metadata = {
   metadataBase: new URL(siteUrl),
   applicationName: "PIPZ",
   title: pipzTitle,
   description: pipzDescription,
+  alternates: {
+    canonical: "/",
+  },
   icons: {
     icon: [
       { url: "/favicon.ico", sizes: "any" },
@@ -36,10 +40,12 @@ export const metadata: Metadata = {
   openGraph: {
     title: pipzTitle,
     description: pipzDescription,
+    url: "/",
+    siteName: "PIPZ",
     type: "website",
     images: [
       {
-        url: "/opengraph-image",
+        url: shareImage,
         width: 1200,
         height: 630,
         alt: "PIPZ black-and-white dice cube logo.",
@@ -52,7 +58,7 @@ export const metadata: Metadata = {
     description: pipzDescription,
     images: [
       {
-        url: "/twitter-image",
+        url: shareImage,
         alt: "PIPZ black-and-white dice cube logo.",
       },
     ],
