@@ -284,7 +284,11 @@ export const useGameStore = create<GameState>((set, get) => ({
 
       newBoard[position.row][position.col] = domino.values[0];
       newBoard[secondPos.row][secondPos.col] = domino.values[1];
-      placedPositions.push(position, secondPos);
+      if (domino.values[0] === domino.values[1]) {
+        placedPositions.push(secondPos, position);
+      } else {
+        placedPositions.push(position, secondPos);
+      }
     }
 
     playPlaceSound();

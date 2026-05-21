@@ -82,7 +82,8 @@ export function resolveMerge(board: Board, group: MergeGroup): Board {
 export function calculateMergeScore(group: MergeGroup, chainLink: number): number {
   const basePoints = group.cells.length * group.value;
 
-  const sizeBonus = group.cells.length >= 4 ? 1.5 : 1;
+  const extraCells = Math.max(0, group.cells.length - 3);
+  const sizeBonus = 1 + extraCells;
   const adjustedBase = basePoints * sizeBonus;
 
   let multiplier: number;
