@@ -152,16 +152,16 @@ export default function PieceTray() {
                   <div
                     className={`w-12 h-12 sm:w-14 sm:h-14 ${isLeft ? 'col-start-2' : ''} ${isUp ? 'row-start-2' : ''}`}
                   >
-                    <DiceFace value={currentPiece.values[0]} size="lg" />
+                    <DiceFace
+                      value={currentPiece.values[0]}
+                      size="lg"
+                      className="[&>span]:bg-[#d99a1e]"
+                    />
                   </div>
                   <div
                     className={`w-12 h-12 sm:w-14 sm:h-14 ${isLeft ? 'col-start-1 row-start-1' : ''} ${isUp ? 'col-start-1 row-start-1' : ''}`}
                   >
-                    <DiceFace
-                      value={currentPiece.values[1]}
-                      size="lg"
-                      className="[&>span]:bg-[#c45c5c]"
-                    />
+                    <DiceFace value={currentPiece.values[1]} size="lg" />
                   </div>
                 </>
               )}
