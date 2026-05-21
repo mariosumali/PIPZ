@@ -104,7 +104,10 @@ export default function PieceTray() {
 
   const isDomino = currentPiece?.type === 'domino';
   const isHorizontal =
-    currentPiece?.type === 'domino' && currentPiece.orientation === 'horizontal';
+    currentPiece?.type === 'domino' &&
+    (currentPiece.orientation === 'right' || currentPiece.orientation === 'left');
+  const isLeft = currentPiece?.type === 'domino' && currentPiece.orientation === 'left';
+  const isUp = currentPiece?.type === 'domino' && currentPiece.orientation === 'up';
 
   return (
     <div className="flex flex-col items-center gap-3 pt-4 pb-2">
@@ -146,11 +149,19 @@ export default function PieceTray() {
                 </div>
               ) : (
                 <>
-                  <div className="w-12 h-12 sm:w-14 sm:h-14">
+                  <div
+                    className={`w-12 h-12 sm:w-14 sm:h-14 ${isLeft ? 'col-start-2' : ''} ${isUp ? 'row-start-2' : ''}`}
+                  >
                     <DiceFace value={currentPiece.values[0]} size="lg" />
                   </div>
-                  <div className="w-12 h-12 sm:w-14 sm:h-14">
-                    <DiceFace value={currentPiece.values[1]} size="lg" />
+                  <div
+                    className={`w-12 h-12 sm:w-14 sm:h-14 ${isLeft ? 'col-start-1 row-start-1' : ''} ${isUp ? 'col-start-1 row-start-1' : ''}`}
+                  >
+                    <DiceFace
+                      value={currentPiece.values[1]}
+                      size="lg"
+                      className="[&>span]:bg-[#c45c5c]"
+                    />
                   </div>
                 </>
               )}

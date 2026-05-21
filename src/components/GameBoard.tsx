@@ -5,6 +5,7 @@ import { useGameStore } from '@/store/game-store';
 import DiceFace from './DiceFace';
 import { DieValue, Position } from '@/types/game';
 import { getBoardPositionFromPoint } from '@/lib/board-position';
+import { getSecondDominoPosition } from '@/lib/domino';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 const GLOW_COLORS: Record<number, string> = {
@@ -63,12 +64,11 @@ export default function GameBoard() {
       if (currentPiece.type === 'single') {
         return board[pos.row][pos.col] === null;
       }
-      const secondPos =
-        currentPiece.orientation === 'horizontal'
-          ? { row: pos.row, col: pos.col + 1 }
-          : { row: pos.row + 1, col: pos.col };
+      const secondPos = getSecondDominoPosition(pos, currentPiece.orientation);
       return (
+        secondPos.row >= 0 &&
         secondPos.row < 6 &&
+        secondPos.col >= 0 &&
         secondPos.col < 6 &&
         board[pos.row][pos.col] === null &&
         board[secondPos.row][secondPos.col] === null
@@ -169,10 +169,7 @@ export default function GameBoard() {
       if (row === previewPos.row && col === previewPos.col) return currentPiece.value;
     } else {
       if (row === previewPos.row && col === previewPos.col) return currentPiece.values[0];
-      const secondPos =
-        currentPiece.orientation === 'horizontal'
-          ? { row: previewPos.row, col: previewPos.col + 1 }
-          : { row: previewPos.row + 1, col: previewPos.col };
+      const secondPos = getSecondDominoPosition(previewPos, currentPiece.orientation);
       if (row === secondPos.row && col === secondPos.col) return currentPiece.values[1];
     }
     return null;
@@ -194,6 +191,9 @@ export default function GameBoard() {
           const mergeInfo = getMergeInfo(rowIdx, colIdx);
           const resolving = isResolving(rowIdx, colIdx);
           const animPhase = mergeAnimation?.phase;
+          const isClearedByMerge = Boolean(
+            mergeInfo && (mergeInfo.isExplosion || !mergeInfo.isTarget)
+          );
 
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           let cellAnimate: any = { scale: 1, opacity: 1, x: 0, y: 0 };
@@ -298,7 +298,15 @@ export default function GameBoard() {
                         : { scale: 0.5, opacity: 0 }
                     }
                     animate={{ scale: 1, opacity: 1, rotateY: 0 }}
-                    exit={{ scale: 0, opacity: 0 }}
+                    exit={
+                      isClearedByMerge
+                        ? {
+                            scale: 0,
+                            opacity: 0,
+                            transition: { duration: 0.18, ease: 'easeOut' },
+                          }
+                        : { scale: 0, opacity: 0 }
+                    }
                     transition={
                       resolving
                         ? {
@@ -309,6 +317,8 @@ export default function GameBoard() {
                             },
                             rotateY: { duration: 0.25, ease: 'easeOut' },
                           }
+                        : isClearedByMerge && animPhase === 'collapse'
+                          ? { duration: 0.18, ease: 'easeOut' }
                         : { type: 'spring', stiffness: 300, damping: 20 }
                     }
                     className="w-full h-full"

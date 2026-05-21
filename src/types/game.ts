@@ -4,7 +4,7 @@ export type CellState = DieValue | null;
 
 export type Board = CellState[][];
 
-export type Orientation = 'horizontal' | 'vertical';
+export type Orientation = 'right' | 'down' | 'left' | 'up';
 
 export interface SinglePiece {
   type: 'single';

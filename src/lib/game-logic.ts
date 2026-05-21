@@ -1,4 +1,5 @@
-import { Board, DieValue, MergeGroup, Position } from '@/types/game';
+import { Board, DieValue, MergeGroup, Orientation, Position } from '@/types/game';
+import { getSecondDominoPosition } from '@/lib/domino';
 
 const GRID_SIZE = 6;
 
@@ -58,13 +59,14 @@ export function findMergeGroupsAt(board: Board, positions: Position[]): MergeGro
   );
 }
 
-export function resolveMerge(board: Board, group: MergeGroup, lastPlaced: Position): Board {
+export function resolveMerge(board: Board, group: MergeGroup): Board {
   const newBoard = board.map(row => [...row]);
   const newValue = group.value + 1;
 
-  const target = group.cells.find(
-    c => c.row === lastPlaced.row && c.col === lastPlaced.col
-  ) || group.cells[group.cells.length - 1];
+  const target =
+    group.cells.find(
+      c => c.row === group.targetCell.row && c.col === group.targetCell.col
+    ) || group.cells[group.cells.length - 1];
 
   for (const cell of group.cells) {
     newBoard[cell.row][cell.col] = null;
@@ -119,7 +121,7 @@ export function canPlaceDomino(board: Board): boolean {
 export function getValidPlacements(
   board: Board,
   pieceType: 'single' | 'domino',
-  orientation: 'horizontal' | 'vertical'
+  orientation: Orientation
 ): Position[] {
   const valid: Position[] = [];
   for (let row = 0; row < GRID_SIZE; row++) {
@@ -128,10 +130,14 @@ export function getValidPlacements(
       if (pieceType === 'single') {
         valid.push({ row, col });
       } else {
-        if (orientation === 'horizontal' && col + 1 < GRID_SIZE && board[row][col + 1] === null) {
-          valid.push({ row, col });
-        }
-        if (orientation === 'vertical' && row + 1 < GRID_SIZE && board[row + 1][col] === null) {
+        const secondPos = getSecondDominoPosition({ row, col }, orientation);
+        if (
+          secondPos.row >= 0 &&
+          secondPos.row < GRID_SIZE &&
+          secondPos.col >= 0 &&
+          secondPos.col < GRID_SIZE &&
+          board[secondPos.row][secondPos.col] === null
+        ) {
           valid.push({ row, col });
         }
       }

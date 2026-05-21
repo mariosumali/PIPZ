@@ -1,4 +1,5 @@
 import { DieValue, Piece } from '@/types/game';
+import { DOMINO_DIRECTIONS } from '@/lib/domino';
 
 function weightedRandom(weights: number[]): number {
   const total = weights.reduce((a, b) => a + b, 0);
@@ -46,6 +47,6 @@ export function generatePiece(turnNumber: number): Piece {
   return {
     type: 'domino',
     values: [generateValue(turnNumber), generateValue(turnNumber)],
-    orientation: Math.random() < 0.5 ? 'horizontal' : 'vertical',
+    orientation: DOMINO_DIRECTIONS[Math.floor(Math.random() * DOMINO_DIRECTIONS.length)],
   };
 }

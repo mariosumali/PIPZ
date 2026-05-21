@@ -19,6 +19,7 @@ import {
   canPlaceDomino,
 } from '@/lib/game-logic';
 import { generatePiece } from '@/lib/piece-generator';
+import { getSecondDominoPosition, rotateDominoOrientation } from '@/lib/domino';
 import { playPlaceSound, playMergeSound, playExplosionSound, playRotateSound } from '@/lib/sounds';
 
 const GLOW_DURATION = 250;
@@ -71,14 +72,26 @@ function checkGameOver(board: Board, piece: Piece): boolean {
   return !canPlaceDomino(board);
 }
 
+function samePosition(a: Position, b: Position): boolean {
+  return a.row === b.row && a.col === b.col;
+}
+
+function getMergeTarget(group: MergeGroup, recentPlacements: Position[]): Position {
+  for (let i = recentPlacements.length - 1; i >= 0; i--) {
+    const recent = recentPlacements[i];
+    const matchingCell = group.cells.find(cell => samePosition(cell, recent));
+    if (matchingCell) return matchingCell;
+  }
+
+  return group.targetCell;
+}
+
 function buildMergeAnimations(
   mergeGroups: MergeGroup[],
-  lastPlaced: Position
+  recentPlacements: Position[]
 ): MergeGroupAnimation[] {
   return mergeGroups.map(group => {
-    const target =
-      group.cells.find(c => c.row === lastPlaced.row && c.col === lastPlaced.col) ||
-      group.cells[group.cells.length - 1];
+    const target = getMergeTarget(group, recentPlacements);
     return {
       cells: group.cells,
       target,
@@ -91,7 +104,14 @@ function buildMergeAnimations(
 type SetFn = (partial: Partial<GameState> | ((state: GameState) => Partial<GameState>)) => void;
 type GetFn = () => GameState;
 
-function startMergeSequence(set: SetFn, get: GetFn, chainLink: number, lastPlaced: Position) {
+function startMergeSequence(
+  set: SetFn,
+  get: GetFn,
+  chainLink: number,
+  recentPlacements: Position[]
+) {
+  let nextRecentPlacements = recentPlacements;
+
   mergeTimers.push(
     setTimeout(() => {
       const anim = get().mergeAnimation;
@@ -134,8 +154,11 @@ function startMergeSequence(set: SetFn, get: GetFn, chainLink: number, lastPlace
           timestamp: Date.now(),
         });
 
-        newBoard = resolveMerge(newBoard, mergeGroup, lastPlaced);
+        newBoard = resolveMerge(newBoard, mergeGroup);
       }
+
+      nextRecentPlacements =
+        resolveTargets.length > 0 ? resolveTargets : recentPlacements;
 
       if (hasExplosion) {
         playExplosionSound();
@@ -168,23 +191,25 @@ function startMergeSequence(set: SetFn, get: GetFn, chainLink: number, lastPlace
       const nextMergeGroups = findMergeGroups(board);
 
       if (nextMergeGroups.length > 0) {
-        const prevAnim = get().mergeAnimation;
-        const prevTarget = prevAnim?.groups[0]?.target || lastPlaced;
+        const lastPlaced = nextRecentPlacements[nextRecentPlacements.length - 1];
         const nextChainLink = chainLink + 1;
-        const nextAnimations = buildMergeAnimations(nextMergeGroups, prevTarget);
+        const nextAnimations = buildMergeAnimations(
+          nextMergeGroups,
+          nextRecentPlacements
+        );
 
         set({
           mergeAnimation: {
             phase: 'glow',
             groups: nextAnimations,
             chainLink: nextChainLink,
-            lastPlaced: prevTarget,
+            lastPlaced,
           },
         });
 
         mergeTimers.push(
           setTimeout(() => {
-            startMergeSequence(set, get, nextChainLink, prevTarget);
+            startMergeSequence(set, get, nextChainLink, nextRecentPlacements);
           }, CHAIN_PAUSE)
         );
       } else {
@@ -237,19 +262,20 @@ export const useGameStore = create<GameState>((set, get) => ({
     if (!currentPiece || get().phase !== 'playing') return;
 
     const newBoard = board.map(row => [...row]);
+    const placedPositions: Position[] = [];
 
     if (currentPiece.type === 'single') {
       if (newBoard[position.row][position.col] !== null) return;
       newBoard[position.row][position.col] = currentPiece.value;
+      placedPositions.push(position);
     } else {
       const domino = currentPiece as DominoPiece;
-      const secondPos: Position =
-        domino.orientation === 'horizontal'
-          ? { row: position.row, col: position.col + 1 }
-          : { row: position.row + 1, col: position.col };
+      const secondPos = getSecondDominoPosition(position, domino.orientation);
 
       if (
+        secondPos.row < 0 ||
         secondPos.row >= 6 ||
+        secondPos.col < 0 ||
         secondPos.col >= 6 ||
         newBoard[position.row][position.col] !== null ||
         newBoard[secondPos.row][secondPos.col] !== null
@@ -258,6 +284,7 @@ export const useGameStore = create<GameState>((set, get) => ({
 
       newBoard[position.row][position.col] = domino.values[0];
       newBoard[secondPos.row][secondPos.col] = domino.values[1];
+      placedPositions.push(position, secondPos);
     }
 
     playPlaceSound();
@@ -266,7 +293,8 @@ export const useGameStore = create<GameState>((set, get) => ({
 
     if (mergeGroups.length > 0) {
       pendingScore = score;
-      const animations = buildMergeAnimations(mergeGroups, position);
+      const animations = buildMergeAnimations(mergeGroups, placedPositions);
+      const lastPlaced = placedPositions[placedPositions.length - 1];
 
       set({
         board: newBoard,
@@ -277,11 +305,11 @@ export const useGameStore = create<GameState>((set, get) => ({
           phase: 'glow',
           groups: animations,
           chainLink: 1,
-          lastPlaced: position,
+          lastPlaced,
         },
       });
 
-      startMergeSequence(set, get, 1, position);
+      startMergeSequence(set, get, 1, placedPositions);
     } else {
       const newTurn = turnNumber + 1;
       const nextPiece = generatePiece(newTurn);
@@ -310,14 +338,10 @@ export const useGameStore = create<GameState>((set, get) => ({
     if (!currentPiece || currentPiece.type !== 'domino') return;
     playRotateSound();
 
-    const wasVertical = currentPiece.orientation === 'vertical';
     set({
       currentPiece: {
         ...currentPiece,
-        orientation: wasVertical ? 'horizontal' : 'vertical',
-        values: wasVertical
-          ? [currentPiece.values[1], currentPiece.values[0]]
-          : currentPiece.values,
+        orientation: rotateDominoOrientation(currentPiece.orientation),
       },
     });
   },
