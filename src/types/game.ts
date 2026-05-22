@@ -1,3 +1,5 @@
+import type { TriominoOrientation } from '@/lib/triomino';
+
 export type DieValue = 1 | 2 | 3 | 4 | 5 | 6;
 
 export type CellState = DieValue | null;
@@ -17,7 +19,13 @@ export interface DominoPiece {
   orientation: Orientation;
 }
 
-export type Piece = SinglePiece | DominoPiece;
+export interface TriominoPiece {
+  type: 'triomino';
+  values: [DieValue, DieValue, DieValue];
+  orientation: TriominoOrientation;
+}
+
+export type Piece = SinglePiece | DominoPiece | TriominoPiece;
 
 export interface Position {
   row: number;
@@ -35,6 +43,14 @@ export interface ScoreEvent {
   points: number;
   position: Position;
   chainLink: number;
+  timestamp: number;
+}
+
+export interface TierLabelEvent {
+  id: string;
+  fromValue: DieValue;
+  toValue: DieValue | 'boom';
+  position: Position;
   timestamp: number;
 }
 
