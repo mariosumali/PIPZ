@@ -2,10 +2,12 @@
 
 import { motion, AnimatePresence } from 'framer-motion';
 import { useGameStore } from '@/store/game-store';
+import { getModeInfo } from '@/lib/game-modes';
 import { useEffect } from 'react';
 
 export default function ScoreDisplay() {
-  const { scoreEvents, dismissScoreEvent } = useGameStore();
+  const { scoreEvents, dismissScoreEvent, gameMode } = useGameStore();
+  const gridSize = getModeInfo(gameMode).rules.gridSize;
 
   useEffect(() => {
     const timers = scoreEvents.map(event =>
@@ -22,8 +24,8 @@ export default function ScoreDisplay() {
             key={event.id}
             className="absolute text-lg font-bold text-[#8b7355] drop-shadow-sm"
             style={{
-              left: `${(event.position.col / 6) * 70 + 15}%`,
-              top: `${(event.position.row / 6) * 50 + 20}%`,
+              left: `${(event.position.col / gridSize) * 70 + 15}%`,
+              top: `${(event.position.row / gridSize) * 50 + 20}%`,
             }}
             initial={{ opacity: 1, y: 0, scale: 0.5 }}
             animate={{ opacity: 0, y: -40, scale: 1.2 }}
