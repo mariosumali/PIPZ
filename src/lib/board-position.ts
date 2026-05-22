@@ -1,11 +1,10 @@
 import { Position } from '@/types/game';
 
-const GRID_SIZE = 6;
-
 export function getBoardPositionFromPoint(
   boardElement: HTMLElement,
   clientX: number,
-  clientY: number
+  clientY: number,
+  gridSize: number
 ): Position | null {
   const rect = boardElement.getBoundingClientRect();
   const style = getComputedStyle(boardElement);
@@ -32,14 +31,14 @@ export function getBoardPositionFromPoint(
   const y = clientY - innerTop;
   if (x < 0 || y < 0 || x > innerWidth || y > innerHeight) return null;
 
-  const cellWidth = (innerWidth - columnGap * (GRID_SIZE - 1)) / GRID_SIZE;
-  const cellHeight = (innerHeight - rowGap * (GRID_SIZE - 1)) / GRID_SIZE;
+  const cellWidth = (innerWidth - columnGap * (gridSize - 1)) / gridSize;
+  const cellHeight = (innerHeight - rowGap * (gridSize - 1)) / gridSize;
   const colPitch = cellWidth + columnGap;
   const rowPitch = cellHeight + rowGap;
   const col = Math.floor(x / colPitch);
   const row = Math.floor(y / rowPitch);
 
-  if (row < 0 || row >= GRID_SIZE || col < 0 || col >= GRID_SIZE) return null;
+  if (row < 0 || row >= gridSize || col < 0 || col >= gridSize) return null;
   if (x - col * colPitch > cellWidth || y - row * rowPitch > cellHeight) {
     return null;
   }
