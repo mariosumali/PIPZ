@@ -5,7 +5,8 @@ import { useGameStore } from '@/store/game-store';
 import DiceFace from './DiceFace';
 import { DieValue, Position } from '@/types/game';
 import { getBoardPositionFromPoint } from '@/lib/board-position';
-import { getSecondDominoPosition } from '@/lib/domino';
+import { getModeInfo } from '@/lib/game-modes';
+import { canPlacePieceAt, getGhostValueAt } from '@/lib/piece-placement';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 const GLOW_COLORS: Record<number, string> = {
@@ -33,7 +34,10 @@ export default function GameBoard() {
     mergeAnimation,
     resolvingCells,
     dragPreviewPosition,
+    gameMode,
   } = useGameStore();
+
+  const gridSize = getModeInfo(gameMode).rules.gridSize;
 
   const boardRef = useRef<HTMLDivElement>(null);
   const [hoverPos, setHoverPos] = useState<Position | null>(null);
@@ -50,31 +54,23 @@ export default function GameBoard() {
       // computed cell pitch is slightly too large and collapsing tiles drift
       // past the merge target.
       const border = parseFloat(style.borderLeftWidth) || 0;
-      const cellWidth = (rect.width - 2 * border - 2 * padding - 5 * gap) / 6;
+      const cellWidth =
+        (rect.width - 2 * border - 2 * padding - (gridSize - 1) * gap) / gridSize;
       setCellPitch(cellWidth + gap);
     };
     compute();
     window.addEventListener('resize', compute);
     return () => window.removeEventListener('resize', compute);
-  }, []);
+  }, [gridSize]);
+
+  const rules = getModeInfo(gameMode).rules;
 
   const isValidPlacement = useCallback(
     (pos: Position): boolean => {
       if (!currentPiece || phase !== 'playing') return false;
-      if (currentPiece.type === 'single') {
-        return board[pos.row][pos.col] === null;
-      }
-      const secondPos = getSecondDominoPosition(pos, currentPiece.orientation);
-      return (
-        secondPos.row >= 0 &&
-        secondPos.row < 6 &&
-        secondPos.col >= 0 &&
-        secondPos.col < 6 &&
-        board[pos.row][pos.col] === null &&
-        board[secondPos.row][secondPos.col] === null
-      );
+      return canPlacePieceAt(board, currentPiece, pos, rules);
     },
-    [board, currentPiece, phase]
+    [board, currentPiece, phase, rules]
   );
 
   const handleCellClick = useCallback(
@@ -106,27 +102,37 @@ export default function GameBoard() {
       e.preventDefault();
       e.dataTransfer.dropEffect = 'move';
       if (!boardRef.current) return;
-      const pos = getBoardPositionFromPoint(boardRef.current, e.clientX, e.clientY);
+      const pos = getBoardPositionFromPoint(
+        boardRef.current,
+        e.clientX,
+        e.clientY,
+        gridSize
+      );
       if (pos && isValidPlacement(pos)) {
         setHoverPos(pos);
       } else {
         setHoverPos(null);
       }
     },
-    [isValidPlacement]
+    [isValidPlacement, gridSize]
   );
 
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
       e.preventDefault();
       if (!boardRef.current) return;
-      const pos = getBoardPositionFromPoint(boardRef.current, e.clientX, e.clientY);
+      const pos = getBoardPositionFromPoint(
+        boardRef.current,
+        e.clientX,
+        e.clientY,
+        gridSize
+      );
       if (pos && isValidPlacement(pos)) {
         placePiece(pos);
       }
       setHoverPos(null);
     },
-    [isValidPlacement, placePiece]
+    [isValidPlacement, placePiece, gridSize]
   );
 
   const handleDragLeave = useCallback(() => {
@@ -165,22 +171,18 @@ export default function GameBoard() {
 
   const isGhostCell = (row: number, col: number): DieValue | null => {
     if (!previewPos || !currentPiece) return null;
-    if (currentPiece.type === 'single') {
-      if (row === previewPos.row && col === previewPos.col) return currentPiece.value;
-    } else {
-      if (row === previewPos.row && col === previewPos.col) return currentPiece.values[0];
-      const secondPos = getSecondDominoPosition(previewPos, currentPiece.orientation);
-      if (row === secondPos.row && col === secondPos.col) return currentPiece.values[1];
-    }
-    return null;
+    return getGhostValueAt(currentPiece, previewPos, { row, col });
   };
 
   return (
     <div
       ref={boardRef}
       data-game-board
-      className="grid grid-cols-6 gap-1.5 p-3 bg-[#e8e2d8] rounded-2xl border-2 border-[#3d3832] aspect-square w-full max-w-[min(85vw,400px)] shadow-sm"
-      style={{ perspective: 800 }}
+      className="grid gap-1.5 p-3 bg-[#e8e2d8] rounded-2xl border-2 border-[#3d3832] aspect-square w-full max-w-[min(85vw,400px)] shadow-sm"
+      style={{
+        gridTemplateColumns: `repeat(${gridSize}, minmax(0, 1fr))`,
+        perspective: 800,
+      }}
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
