@@ -7,6 +7,9 @@ import PieceTray from './PieceTray';
 import Header from './Header';
 import GameOver from './GameOver';
 import ScoreDisplay from './ScoreDisplay';
+import ModeSelector from './ModeSelector';
+import ComboMeter from './ComboMeter';
+import TierLabelDisplay from './TierLabelDisplay';
 
 export default function Game() {
   const { currentPiece, phase, resetGame, rotatePiece } = useGameStore();
@@ -33,10 +36,13 @@ export default function Game() {
   return (
     <div className="flex flex-col items-center justify-center min-h-dvh px-4 py-6 gap-2 select-none">
       <Header />
+      <ModeSelector />
       <GameBoard />
+      <ComboMeter />
       <PieceTray />
       <GameOver />
       <ScoreDisplay />
+      <TierLabelDisplay />
     </div>
   );
 }
