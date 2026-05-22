@@ -1,7 +1,6 @@
 import { create } from 'zustand';
 import {
   Board,
-  DominoPiece,
   GamePhase,
   MergeAnimationState,
   MergeGroup,
@@ -9,18 +8,28 @@ import {
   Piece,
   Position,
   ScoreEvent,
+  TierLabelEvent,
 } from '@/types/game';
 import {
   createEmptyBoard,
-  findMergeGroups,
+  getNextMergeGroups,
   resolveMerge,
   calculateMergeScore,
-  canPlaceSingle,
-  canPlaceDomino,
+  checkCanPlacePiece,
 } from '@/lib/game-logic';
 import { generatePiece } from '@/lib/piece-generator';
-import { getSecondDominoPosition, rotateDominoOrientation } from '@/lib/domino';
+import { rotateDominoOrientation } from '@/lib/domino';
+import { rotateTriominoOrientation } from '@/lib/triomino';
+import { canPlacePieceAt, placePieceOnBoard } from '@/lib/piece-placement';
 import { playPlaceSound, playMergeSound, playExplosionSound, playRotateSound } from '@/lib/sounds';
+import {
+  DEFAULT_GAME_MODE,
+  GameMode,
+  GameRules,
+  getBestScoreKey,
+  getModeInfo,
+} from '@/lib/game-modes';
+import { pickComboWaveTargets } from '@/lib/combo-merge';
 
 const GLOW_DURATION = 250;
 const COLLAPSE_DURATION = 350;
@@ -28,6 +37,7 @@ const RESOLVE_DURATION = 300;
 const CHAIN_PAUSE = 200;
 
 interface GameState {
+  gameMode: GameMode;
   board: Board;
   currentPiece: Piece | null;
   score: number;
@@ -35,6 +45,7 @@ interface GameState {
   turnNumber: number;
   phase: GamePhase;
   scoreEvents: ScoreEvent[];
+  tierLabelEvents: TierLabelEvent[];
   mergeAnimation: MergeAnimationState | null;
   resolvingCells: Position[];
   dragPreviewPosition: Position | null;
@@ -42,8 +53,10 @@ interface GameState {
   placePiece: (position: Position) => void;
   rotatePiece: () => void;
   resetGame: () => void;
+  setGameMode: (mode: GameMode) => void;
   setDragPreviewPosition: (position: Position | null) => void;
   dismissScoreEvent: (id: string) => void;
+  dismissTierLabelEvent: (id: string) => void;
 }
 
 let mergeTimers: ReturnType<typeof setTimeout>[] = [];
@@ -54,44 +67,59 @@ function clearMergeTimers() {
   mergeTimers = [];
 }
 
-function loadBestScore(): number {
+function getRules(mode: GameMode): GameRules {
+  return getModeInfo(mode).rules;
+}
+
+function loadBestScore(mode: GameMode): number {
   if (typeof window === 'undefined') return 0;
-  const stored = localStorage.getItem('pipz-best-score');
-  return stored ? parseInt(stored, 10) : 0;
-}
-
-function saveBestScore(score: number) {
-  if (typeof window === 'undefined') return;
-  localStorage.setItem('pipz-best-score', score.toString());
-}
-
-function checkGameOver(board: Board, piece: Piece): boolean {
-  if (piece.type === 'single') {
-    return !canPlaceSingle(board);
+  const key = getBestScoreKey(mode);
+  const stored = localStorage.getItem(key);
+  if (stored) return parseInt(stored, 10);
+  // Migrate legacy single-key best score into Classic
+  if (mode === 'classic') {
+    const legacy = localStorage.getItem('pipz-best-score');
+    if (legacy) {
+      localStorage.setItem(key, legacy);
+      return parseInt(legacy, 10);
+    }
   }
-  return !canPlaceDomino(board);
+  return 0;
+}
+
+function saveBestScore(mode: GameMode, score: number) {
+  if (typeof window === 'undefined') return;
+  localStorage.setItem(getBestScoreKey(mode), score.toString());
 }
 
 function samePosition(a: Position, b: Position): boolean {
   return a.row === b.row && a.col === b.col;
 }
 
-function getMergeTarget(group: MergeGroup, recentPlacements: Position[]): Position {
+function getClassicMergeTarget(group: MergeGroup, recentPlacements: Position[]): Position {
   for (let i = recentPlacements.length - 1; i >= 0; i--) {
     const recent = recentPlacements[i];
     const matchingCell = group.cells.find(cell => samePosition(cell, recent));
     if (matchingCell) return matchingCell;
   }
-
   return group.targetCell;
 }
 
 function buildMergeAnimations(
+  board: Board,
   mergeGroups: MergeGroup[],
-  recentPlacements: Position[]
+  recentPlacements: Position[],
+  rules: GameRules
 ): MergeGroupAnimation[] {
-  return mergeGroups.map(group => {
-    const target = getMergeTarget(group, recentPlacements);
+  const comboTargets = rules.useComboTargets
+    ? pickComboWaveTargets(board, mergeGroups, recentPlacements, rules)
+    : null;
+
+  return mergeGroups.map((group, index) => {
+    const target = comboTargets
+      ? comboTargets[index]
+      : getClassicMergeTarget(group, recentPlacements);
+
     return {
       cells: group.cells,
       target,
@@ -104,6 +132,19 @@ function buildMergeAnimations(
 type SetFn = (partial: Partial<GameState> | ((state: GameState) => Partial<GameState>)) => void;
 type GetFn = () => GameState;
 
+function buildTierLabels(
+  groups: MergeGroupAnimation[]
+): TierLabelEvent[] {
+  const now = Date.now();
+  return groups.map((group, i) => ({
+    id: `tier-${now}-${i}-${group.target.row}-${group.target.col}`,
+    fromValue: group.value,
+    toValue: group.isExplosion ? 'boom' : ((group.value + 1) as TierLabelEvent['toValue']),
+    position: group.target,
+    timestamp: now,
+  }));
+}
+
 function startMergeSequence(
   set: SetFn,
   get: GetFn,
@@ -111,12 +152,22 @@ function startMergeSequence(
   recentPlacements: Position[]
 ) {
   let nextRecentPlacements = recentPlacements;
+  const rules = getRules(get().gameMode);
 
   mergeTimers.push(
     setTimeout(() => {
       const anim = get().mergeAnimation;
       if (!anim) return;
-      set({ mergeAnimation: { ...anim, phase: 'collapse' } });
+
+      const isCombo = get().gameMode === 'combo';
+      const newTierLabels = isCombo ? buildTierLabels(anim.groups) : [];
+
+      set({
+        mergeAnimation: { ...anim, phase: 'collapse' },
+        tierLabelEvents: isCombo
+          ? [...get().tierLabelEvents, ...newTierLabels]
+          : get().tierLabelEvents,
+      });
     }, GLOW_DURATION)
   );
 
@@ -137,7 +188,7 @@ function startMergeSequence(
           targetCell: group.target,
         };
 
-        const points = calculateMergeScore(mergeGroup, chainLink);
+        const points = calculateMergeScore(mergeGroup, chainLink, rules.mergeMin);
         pendingScore += points;
 
         if (group.isExplosion) {
@@ -166,10 +217,11 @@ function startMergeSequence(
         playMergeSound(chainLink);
       }
 
-      let newBestScore = get().bestScore;
+      const { gameMode, bestScore } = get();
+      let newBestScore = bestScore;
       if (pendingScore > newBestScore) {
         newBestScore = pendingScore;
-        saveBestScore(newBestScore);
+        saveBestScore(gameMode, newBestScore);
       }
 
       set({
@@ -185,17 +237,20 @@ function startMergeSequence(
 
   mergeTimers.push(
     setTimeout(() => {
-      const { board } = get();
+      const { board, gameMode } = get();
       set({ resolvingCells: [] });
 
-      const nextMergeGroups = findMergeGroups(board);
+      const modeRules = getRules(gameMode);
+      const nextMergeGroups = getNextMergeGroups(board, modeRules);
 
       if (nextMergeGroups.length > 0) {
         const lastPlaced = nextRecentPlacements[nextRecentPlacements.length - 1];
         const nextChainLink = chainLink + 1;
         const nextAnimations = buildMergeAnimations(
+          board,
           nextMergeGroups,
-          nextRecentPlacements
+          nextRecentPlacements,
+          modeRules
         );
 
         set({
@@ -221,17 +276,18 @@ function startMergeSequence(
 
 function finalizeTurn(set: SetFn, get: GetFn) {
   clearMergeTimers();
-  const { board, turnNumber } = get();
+  const { board, turnNumber, gameMode } = get();
+  const rules = getRules(gameMode);
   const newTurn = turnNumber + 1;
-  const nextPiece = generatePiece(newTurn);
+  const nextPiece = generatePiece(newTurn, rules);
 
   let newBestScore = get().bestScore;
   if (pendingScore > newBestScore) {
     newBestScore = pendingScore;
-    saveBestScore(newBestScore);
+    saveBestScore(gameMode, newBestScore);
   }
 
-  const isGameOver = checkGameOver(board, nextPiece);
+  const isGameOver = !checkCanPlacePiece(board, nextPiece, rules);
 
   set({
     score: pendingScore,
@@ -242,62 +298,69 @@ function finalizeTurn(set: SetFn, get: GetFn) {
     mergeAnimation: null,
     resolvingCells: [],
     dragPreviewPosition: null,
+    tierLabelEvents: [],
+  });
+}
+
+function startNewGame(set: SetFn, mode: GameMode) {
+  clearMergeTimers();
+  const rules = getRules(mode);
+  const firstPiece = generatePiece(1, rules);
+  set({
+    gameMode: mode,
+    board: createEmptyBoard(rules),
+    currentPiece: firstPiece,
+    score: 0,
+    turnNumber: 1,
+    phase: 'playing',
+    scoreEvents: [],
+    tierLabelEvents: [],
+    mergeAnimation: null,
+    resolvingCells: [],
+    dragPreviewPosition: null,
+    bestScore: loadBestScore(mode),
   });
 }
 
 export const useGameStore = create<GameState>((set, get) => ({
-  board: createEmptyBoard(),
+  gameMode: DEFAULT_GAME_MODE,
+  board: createEmptyBoard(getRules(DEFAULT_GAME_MODE)),
   currentPiece: null,
   score: 0,
   bestScore: 0,
   turnNumber: 1,
   phase: 'playing',
   scoreEvents: [],
+  tierLabelEvents: [],
   mergeAnimation: null,
   resolvingCells: [],
   dragPreviewPosition: null,
 
   placePiece: (position: Position) => {
-    const { board, currentPiece, score, turnNumber } = get();
+    const { board, currentPiece, score, turnNumber, gameMode } = get();
     if (!currentPiece || get().phase !== 'playing') return;
 
-    const newBoard = board.map(row => [...row]);
-    const placedPositions: Position[] = [];
+    const rules = getRules(gameMode);
+    if (!canPlacePieceAt(board, currentPiece, position, rules)) return;
 
-    if (currentPiece.type === 'single') {
-      if (newBoard[position.row][position.col] !== null) return;
-      newBoard[position.row][position.col] = currentPiece.value;
-      placedPositions.push(position);
-    } else {
-      const domino = currentPiece as DominoPiece;
-      const secondPos = getSecondDominoPosition(position, domino.orientation);
-
-      if (
-        secondPos.row < 0 ||
-        secondPos.row >= 6 ||
-        secondPos.col < 0 ||
-        secondPos.col >= 6 ||
-        newBoard[position.row][position.col] !== null ||
-        newBoard[secondPos.row][secondPos.col] !== null
-      )
-        return;
-
-      newBoard[position.row][position.col] = domino.values[0];
-      newBoard[secondPos.row][secondPos.col] = domino.values[1];
-      if (domino.values[0] === domino.values[1]) {
-        placedPositions.push(secondPos, position);
-      } else {
-        placedPositions.push(position, secondPos);
-      }
-    }
+    const { board: newBoard, placedPositions } = placePieceOnBoard(
+      board,
+      currentPiece,
+      position
+    );
 
     playPlaceSound();
 
-    const mergeGroups = findMergeGroups(newBoard);
+    const mergeGroups = getNextMergeGroups(newBoard, rules);
 
     if (mergeGroups.length > 0) {
       pendingScore = score;
-      const animations = buildMergeAnimations(mergeGroups, placedPositions);
+      const animations = buildMergeAnimations(
+        newBoard,
+        mergeGroups,
+        placedPositions,
+        rules
+      );
       const lastPlaced = placedPositions[placedPositions.length - 1];
 
       set({
@@ -305,6 +368,7 @@ export const useGameStore = create<GameState>((set, get) => ({
         currentPiece: null,
         phase: 'merging',
         dragPreviewPosition: null,
+        tierLabelEvents: [],
         mergeAnimation: {
           phase: 'glow',
           groups: animations,
@@ -316,15 +380,15 @@ export const useGameStore = create<GameState>((set, get) => ({
       startMergeSequence(set, get, 1, placedPositions);
     } else {
       const newTurn = turnNumber + 1;
-      const nextPiece = generatePiece(newTurn);
+      const nextPiece = generatePiece(newTurn, rules);
 
       let newBestScore = get().bestScore;
       if (score > newBestScore) {
         newBestScore = score;
-        saveBestScore(newBestScore);
+        saveBestScore(gameMode, newBestScore);
       }
 
-      const isGameOver = checkGameOver(newBoard, nextPiece);
+      const isGameOver = !checkCanPlacePiece(newBoard, nextPiece, rules);
 
       set({
         board: newBoard,
@@ -339,32 +403,34 @@ export const useGameStore = create<GameState>((set, get) => ({
 
   rotatePiece: () => {
     const { currentPiece } = get();
-    if (!currentPiece || currentPiece.type !== 'domino') return;
+    if (!currentPiece || currentPiece.type === 'single') return;
     playRotateSound();
+
+    if (currentPiece.type === 'domino') {
+      set({
+        currentPiece: {
+          ...currentPiece,
+          orientation: rotateDominoOrientation(currentPiece.orientation),
+        },
+      });
+      return;
+    }
 
     set({
       currentPiece: {
         ...currentPiece,
-        orientation: rotateDominoOrientation(currentPiece.orientation),
+        orientation: rotateTriominoOrientation(currentPiece.orientation),
       },
     });
   },
 
   resetGame: () => {
-    clearMergeTimers();
-    const firstPiece = generatePiece(1);
-    set({
-      board: createEmptyBoard(),
-      currentPiece: firstPiece,
-      score: 0,
-      turnNumber: 1,
-      phase: 'playing',
-      scoreEvents: [],
-      mergeAnimation: null,
-      resolvingCells: [],
-      dragPreviewPosition: null,
-      bestScore: loadBestScore(),
-    });
+    startNewGame(set, get().gameMode);
+  },
+
+  setGameMode: (mode: GameMode) => {
+    if (mode === get().gameMode) return;
+    startNewGame(set, mode);
   },
 
   setDragPreviewPosition: (position: Position | null) => {
@@ -374,6 +440,12 @@ export const useGameStore = create<GameState>((set, get) => ({
   dismissScoreEvent: (id: string) => {
     set({
       scoreEvents: get().scoreEvents.filter(e => e.id !== id),
+    });
+  },
+
+  dismissTierLabelEvent: (id: string) => {
+    set({
+      tierLabelEvents: get().tierLabelEvents.filter(e => e.id !== id),
     });
   },
 }));
