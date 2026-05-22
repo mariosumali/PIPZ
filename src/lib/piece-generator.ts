@@ -1,5 +1,7 @@
 import { DieValue, Piece } from '@/types/game';
+import { GameRules } from '@/lib/game-modes';
 import { DOMINO_DIRECTIONS } from '@/lib/domino';
+import { TRIOMINO_ORIENTATIONS } from '@/lib/triomino';
 
 function weightedRandom(weights: number[]): number {
   const total = weights.reduce((a, b) => a + b, 0);
@@ -25,7 +27,30 @@ function generateValue(turnNumber: number): DieValue {
   return (weightedRandom(weights) + 1) as DieValue;
 }
 
-export function generatePiece(turnNumber: number): Piece {
+function generateDomino(turnNumber: number): Piece {
+  return {
+    type: 'domino',
+    values: [generateValue(turnNumber), generateValue(turnNumber)],
+    orientation: DOMINO_DIRECTIONS[Math.floor(Math.random() * DOMINO_DIRECTIONS.length)],
+  };
+}
+
+function generateTriomino(turnNumber: number): Piece {
+  return {
+    type: 'triomino',
+    values: [
+      generateValue(turnNumber),
+      generateValue(turnNumber),
+      generateValue(turnNumber),
+    ],
+    orientation:
+      TRIOMINO_ORIENTATIONS[
+        Math.floor(Math.random() * TRIOMINO_ORIENTATIONS.length)
+      ],
+  };
+}
+
+export function generatePiece(turnNumber: number, rules: GameRules): Piece {
   let singleChance: number;
 
   if (turnNumber <= 20) {
@@ -44,9 +69,12 @@ export function generatePiece(turnNumber: number): Piece {
     };
   }
 
-  return {
-    type: 'domino',
-    values: [generateValue(turnNumber), generateValue(turnNumber)],
-    orientation: DOMINO_DIRECTIONS[Math.floor(Math.random() * DOMINO_DIRECTIONS.length)],
-  };
+  if (rules.allowTriominoes) {
+    const triominoChance = turnNumber <= 20 ? 0.12 : turnNumber <= 60 ? 0.2 : 0.28;
+    if (Math.random() < triominoChance) {
+      return generateTriomino(turnNumber);
+    }
+  }
+
+  return generateDomino(turnNumber);
 }
