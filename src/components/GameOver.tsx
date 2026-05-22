@@ -2,12 +2,14 @@
 
 import { motion, AnimatePresence } from 'framer-motion';
 import { useGameStore } from '@/store/game-store';
+import { getModeInfo } from '@/lib/game-modes';
 
 export default function GameOver() {
-  const { phase, score, bestScore, resetGame } = useGameStore();
+  const { phase, score, bestScore, resetGame, gameMode } = useGameStore();
+  const modeLabel = getModeInfo(gameMode).label;
 
   const handleShare = async () => {
-    const text = `PIPZ 🎲 Score: ${score.toLocaleString()}${score >= bestScore ? ' (New Best!)' : ''}\nCan you beat me?`;
+    const text = `PIPZ 🎲 ${modeLabel} — Score: ${score.toLocaleString()}${score >= bestScore ? ' (New Best!)' : ''}\nCan you beat me?`;
     if (navigator.share) {
       try {
         await navigator.share({ text });
@@ -36,7 +38,8 @@ export default function GameOver() {
             transition={{ type: 'spring', damping: 20, stiffness: 200 }}
           >
             <h2 className="text-3xl font-bold text-[#2d2926] mb-2">Game Over</h2>
-            <p className="text-[#8b7d6f] mb-6">Board is full!</p>
+            <p className="text-[#8b7d6f] mb-1">Board is full!</p>
+            <p className="text-xs text-[#a89a8c] mb-6">{modeLabel} mode</p>
 
             <div className="space-y-3 mb-8">
               <div className="flex justify-between items-center px-4 py-3 bg-[#e8e2d8] rounded-lg border border-[#c4b8a8]">
