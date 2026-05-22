@@ -3,11 +3,14 @@
 import { useGameStore } from '@/store/game-store';
 import DiceFace from './DiceFace';
 import { getBoardPositionFromPoint } from '@/lib/board-position';
+import { getModeInfo } from '@/lib/game-modes';
+import { getTriominoTraySlots } from '@/lib/triomino-tray';
 import { useRef, useCallback, type PointerEvent } from 'react';
 
 export default function PieceTray() {
-  const { currentPiece, rotatePiece, phase, placePiece, setDragPreviewPosition } =
+  const { currentPiece, rotatePiece, phase, placePiece, setDragPreviewPosition, gameMode } =
     useGameStore();
+  const gridSize = getModeInfo(gameMode).rules.gridSize;
   const pieceRef = useRef<HTMLDivElement>(null);
   const didDrag = useRef(false);
   const pointerDrag = useRef<{
@@ -28,8 +31,8 @@ export default function PieceTray() {
   const getTouchedBoardPosition = useCallback((clientX: number, clientY: number) => {
     const boardElement = document.querySelector<HTMLElement>('[data-game-board]');
     if (!boardElement) return null;
-    return getBoardPositionFromPoint(boardElement, clientX, clientY);
-  }, []);
+    return getBoardPositionFromPoint(boardElement, clientX, clientY, gridSize);
+  }, [gridSize]);
 
   const handlePointerDown = useCallback(
     (e: PointerEvent<HTMLDivElement>) => {
@@ -103,11 +106,16 @@ export default function PieceTray() {
   if (phase === 'gameover') return null;
 
   const isDomino = currentPiece?.type === 'domino';
+  const isTriomino = currentPiece?.type === 'triomino';
   const isHorizontal =
     currentPiece?.type === 'domino' &&
     (currentPiece.orientation === 'right' || currentPiece.orientation === 'left');
   const isLeft = currentPiece?.type === 'domino' && currentPiece.orientation === 'left';
   const isUp = currentPiece?.type === 'domino' && currentPiece.orientation === 'up';
+  const triominoSlots =
+    currentPiece?.type === 'triomino'
+      ? getTriominoTraySlots(currentPiece.orientation)
+      : [];
 
   return (
     <div className="flex flex-col items-center gap-3 pt-4 pb-2">
@@ -137,9 +145,13 @@ export default function PieceTray() {
                 cursor-pointer
                 grid gap-1 p-1 rounded-lg bg-[#faf8f5] border-2 border-[#3d3832] shadow-sm
                 touch-none hover:scale-105 active:scale-95 transition-transform
-                ${isDomino
-                  ? isHorizontal ? 'grid-cols-2 grid-rows-1' : 'grid-cols-1 grid-rows-2'
-                  : 'grid-cols-1 grid-rows-1'
+                ${isTriomino
+                  ? 'grid-cols-2 grid-rows-2'
+                  : isDomino
+                    ? isHorizontal
+                      ? 'grid-cols-2 grid-rows-1'
+                      : 'grid-cols-1 grid-rows-2'
+                    : 'grid-cols-1 grid-rows-1'
                 }
               `}
             >
@@ -147,6 +159,27 @@ export default function PieceTray() {
                 <div className="w-12 h-12 sm:w-14 sm:h-14">
                   <DiceFace value={currentPiece.value} size="lg" />
                 </div>
+              ) : currentPiece.type === 'triomino' ? (
+                <>
+                  {triominoSlots.map(slot => (
+                    <div
+                      key={slot.index}
+                      className="w-12 h-12 sm:w-14 sm:h-14"
+                      style={{
+                        gridColumnStart: slot.col + 1,
+                        gridRowStart: slot.row + 1,
+                      }}
+                    >
+                      <DiceFace
+                        value={currentPiece.values[slot.index]}
+                        size="lg"
+                        className={
+                          slot.index === 0 ? '[&>span]:bg-[#d99a1e]' : undefined
+                        }
+                      />
+                    </div>
+                  ))}
+                </>
               ) : (
                 <>
                   <div
